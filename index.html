@@ -254,6 +254,43 @@
     margin-top: 4px;
   }
 
+  .talent-tier{
+    margin-bottom: 8px;
+  }
+  .talent-tier .tier-label{
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .talent-options{
+    display:flex;
+    gap: 8px;
+  }
+  .talent-option{
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--muted);
+  }
+  .talent-option.selected{
+    border-color: var(--gold-dim);
+    color: var(--gold);
+    background: var(--panel-raised);
+  }
+  .talent-tier.locked .talent-option{
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+  .talent-tier.locked .tier-label::after{
+    content: ' (locked \2014 raise level)';
+  }
+
   footer{
     text-align:center;
     font-size:11px;
@@ -304,6 +341,9 @@
       <div class="stat advanced-only"><div class="label">Magic Resist</div><div class="value" id="statMR">—</div></div>
     </div>
 
+    <div class="section-title">Talents</div>
+    <div id="talentTree"></div>
+
     <div class="section-title">Abilities</div>
     <div id="abilitiesList"></div>
 
@@ -337,6 +377,7 @@ let heroes = [];
 let currentHero = null;
 let abilityData = {};
 let heroAbilityMap = {};
+let selectedTalents = {}; // tier (1-4) -> talent name
 
 const statusEl = document.getElementById('status');
 const searchEl = document.getElementById('search');
@@ -418,6 +459,110 @@ function renderAbilities(hero){
   }
 }
 
+const TALENT_TIER_LEVEL = { 1: 10, 2: 15, 3: 20, 4: 25 };
+
+// Best-effort parser for generic (non hero-unique) talent bonuses.
+// Hero-unique talents (special_bonus_unique_*) can't be auto-parsed since
+// their effect is hero-specific ability behavior, not a flat stat.
+function parseTalentBonus(name){
+  let m;
+  if (m = name.match(/^special_bonus_strength_(\d+)$/)) return { stat: 'str', amount: +m[1] };
+  if (m = name.match(/^special_bonus_agility_(\d+)$/)) return { stat: 'agi', amount: +m[1] };
+  if (m = name.match(/^special_bonus_intelligence_(\d+)$/)) return { stat: 'int', amount: +m[1] };
+  if (m = name.match(/^special_bonus_hp_regen_(\d+)$/)) return { stat: 'hpRegen', amount: +m[1] };
+  if (m = name.match(/^special_bonus_mp_regen_(\d+)$/)) return { stat: 'mpRegen', amount: +m[1] };
+  if (m = name.match(/^special_bonus_hp_(\d+)$/)) return { stat: 'health', amount: +m[1] };
+  if (m = name.match(/^special_bonus_mp_(\d+)$/)) return { stat: 'mana', amount: +m[1] };
+  if (m = name.match(/^special_bonus_movement_speed_(\d+)$/)) return { stat: 'moveSpeed', amount: +m[1] };
+  if (m = name.match(/^special_bonus_attack_speed_(\d+)$/)) return { stat: 'attackSpeedRating', amount: +m[1] };
+  if (m = name.match(/^special_bonus_armor_(\d+)$/)) return { stat: 'armor', amount: +m[1] };
+  if (m = name.match(/^special_bonus_magic_resistance_(\d+)$/)) return { stat: 'mr', amount: +m[1] };
+  if (m = name.match(/^special_bonus_attack_range_(\d+)$/)) return { stat: 'attackRange', amount: +m[1] };
+  return null; // hero-unique or unrecognized pattern — display only
+}
+
+function talentLabel(name){
+  const ab = abilityData[name];
+  if (ab && ab.dname) return ab.dname;
+  return name.replace(/^special_bonus_/, '').replace(/_/g, ' ');
+}
+
+function renderTalents(hero){
+  const container = document.getElementById('talentTree');
+  container.innerHTML = '';
+  selectedTalents = {};
+
+  const heroKit = heroAbilityMap[hero.name];
+  if (!heroKit || !heroKit.talents || !heroKit.talents.length) {
+    container.innerHTML = '<div id="abilitiesNote">Talent data unavailable right now.</div>';
+    return;
+  }
+
+  const tiers = {};
+  heroKit.talents.forEach(t => {
+    if (!tiers[t.level]) tiers[t.level] = [];
+    tiers[t.level].push(t.name);
+  });
+
+  [1, 2, 3, 4].forEach(tier => {
+    const opts = tiers[tier];
+    if (!opts) return;
+    const realLevel = TALENT_TIER_LEVEL[tier];
+
+    const tierEl = document.createElement('div');
+    tierEl.className = 'talent-tier';
+    tierEl.dataset.tier = tier;
+
+    const label = document.createElement('div');
+    label.className = 'tier-label';
+    label.textContent = `LEVEL ${realLevel}`;
+    tierEl.appendChild(label);
+
+    const optsEl = document.createElement('div');
+    optsEl.className = 'talent-options';
+    opts.forEach(name => {
+      const opt = document.createElement('div');
+      opt.className = 'talent-option';
+      opt.textContent = talentLabel(name);
+      opt.addEventListener('click', () => {
+        const level = parseInt(levelEl.value, 10);
+        if (level < realLevel) return;
+        selectedTalents[tier] = (selectedTalents[tier] === name) ? null : name;
+        renderTalentSelection();
+        recalculate();
+      });
+      optsEl.appendChild(opt);
+    });
+    tierEl.appendChild(optsEl);
+    container.appendChild(tierEl);
+  });
+
+  renderTalentSelection();
+}
+
+function renderTalentSelection(){
+  const level = parseInt(levelEl.value, 10);
+  document.querySelectorAll('.talent-tier').forEach(tierEl => {
+    const tier = parseInt(tierEl.dataset.tier, 10);
+    const realLevel = TALENT_TIER_LEVEL[tier];
+    tierEl.classList.toggle('locked', level < realLevel);
+    tierEl.querySelectorAll('.talent-option').forEach(opt => {
+      opt.classList.toggle('selected', selectedTalents[tier] && opt.textContent === talentLabel(selectedTalents[tier]));
+    });
+  });
+}
+
+function getActiveTalentBonuses(){
+  const bonuses = { str: 0, agi: 0, int: 0, health: 0, mana: 0, hpRegen: 0, mpRegen: 0,
+                     moveSpeed: 0, attackSpeedRating: 0, armor: 0, mr: 0, attackRange: 0 };
+  Object.values(selectedTalents).forEach(name => {
+    if (!name) return;
+    const parsed = parseTalentBonus(name);
+    if (parsed) bonuses[parsed.stat] += parsed.amount;
+  });
+  return bonuses;
+}
+
 async function loadHeroes(){
   const cached = localStorage.getItem(CACHE_KEY);
   const cachedTs = parseInt(localStorage.getItem(CACHE_TS_KEY) || '0', 10);
@@ -487,11 +632,13 @@ function selectHero(h){
   document.getElementById('heroAttr').textContent = attrLabel(h.primary_attr);
   stoneEl.classList.add('visible');
   renderAbilities(h);
+  renderTalents(h);
   recalculate();
 }
 
 levelEl.addEventListener('input', () => {
   levelBadgeEl.textContent = levelEl.value;
+  renderTalentSelection();
   recalculate();
 });
 
@@ -520,24 +667,25 @@ function recalculate(){
   if (!currentHero) return;
   const h = currentHero;
   const level = parseInt(levelEl.value, 10);
+  const bonus = getActiveTalentBonuses();
 
-  const str = statAtLevel(h.base_str, h.str_gain, level);
-  const agi = statAtLevel(h.base_agi, h.agi_gain, level);
-  const int_ = statAtLevel(h.base_int, h.int_gain, level);
+  const str = statAtLevel(h.base_str, h.str_gain, level) + bonus.str;
+  const agi = statAtLevel(h.base_agi, h.agi_gain, level) + bonus.agi;
+  const int_ = statAtLevel(h.base_int, h.int_gain, level) + bonus.int;
 
   // Health & mana
-  const health = h.base_health + str * 22;
-  const mana = h.base_mana + int_ * 12;
+  const health = h.base_health + str * 22 + bonus.health;
+  const mana = h.base_mana + int_ * 12 + bonus.mana;
 
   // Regen
-  const hpRegen = h.base_health_regen + str * 0.1;
-  const mpRegen = h.base_mana_regen + int_ * 0.05;
+  const hpRegen = h.base_health_regen + str * 0.1 + bonus.hpRegen;
+  const mpRegen = h.base_mana_regen + int_ * 0.05 + bonus.mpRegen;
 
   // Armor: base armor already includes agility at base_agi; add gain contribution
-  const armor = h.base_armor + (agi - h.base_agi) * 0.167;
+  const armor = h.base_armor + (agi - h.base_agi) * 0.167 + bonus.armor;
 
   // Magic resistance stored as base_mr (usually 25, flat) — displayed as-is
-  const mr = h.base_mr;
+  const mr = h.base_mr + bonus.mr;
 
   // Attack damage: primary stat (or 0.7x all three if Universal) added to base weapon damage range
   let bonusDamage;
@@ -554,8 +702,11 @@ function recalculate(){
   const dmgMax = Math.round(h.base_attack_max + bonusDamage);
 
   // Attack speed: IAS from agility (agility gives 1 attack speed rating per point beyond base)
-  const attackSpeedRating = 100 + (agi - h.base_agi) * 1;
+  const attackSpeedRating = 100 + (agi - h.base_agi) * 1 + bonus.attackSpeedRating;
   const attacksPerSec = (attackSpeedRating / 100) / (h.base_attack_time / 100) * h.attack_rate;
+
+  const moveSpeed = h.move_speed + bonus.moveSpeed;
+  const attackRange = h.attack_range + bonus.attackRange;
 
   document.getElementById('statHealth').innerHTML = `${Math.round(health)}`;
   document.getElementById('statMana').innerHTML = `${Math.round(mana)}`;
@@ -563,8 +714,8 @@ function recalculate(){
   document.getElementById('statMR').innerHTML = `${mr}%`;
   document.getElementById('statDamage').innerHTML = `${dmgMin}\u2013${dmgMax}`;
   document.getElementById('statAtkSpeed').innerHTML = `${attacksPerSec.toFixed(2)}`;
-  document.getElementById('statMS').innerHTML = `${h.move_speed}`;
-  document.getElementById('statRange').innerHTML = `${h.attack_range}`;
+  document.getElementById('statMS').innerHTML = `${moveSpeed}`;
+  document.getElementById('statRange').innerHTML = `${attackRange}`;
   document.getElementById('statHPRegen').innerHTML = `${hpRegen.toFixed(1)}`;
   document.getElementById('statMPRegen').innerHTML = `${mpRegen.toFixed(1)}`;
 }
