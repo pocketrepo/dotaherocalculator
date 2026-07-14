@@ -320,6 +320,68 @@
     color:var(--muted);
     padding: 24px 16px 12px;
   }
+
+  .items-hint{
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .item-slots{
+    display:grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin: 12px 0 6px;
+  }
+  .item-slot{
+    background: var(--bg);
+    border: 1px dashed var(--border);
+    border-radius: 4px;
+    padding: 8px;
+    min-height: 64px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    cursor:pointer;
+  }
+  .item-slot.filled{
+    border-style: solid;
+  }
+  .item-slot.filled:hover{
+    border-color: var(--rust);
+  }
+  .item-slot .item-icon{
+    width: 42px; height: 30px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    object-fit: cover;
+    margin-bottom: 4px;
+  }
+  .item-slot .item-name{
+    font-size: 10px;
+    line-height: 1.25;
+    color: var(--parchment);
+  }
+  .item-slot .item-empty-label{
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .items-total{
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    text-align: right;
+    margin-bottom: 4px;
+  }
+  .items-note{
+    font-size: 11px;
+    color: var(--rust);
+    margin-bottom: 4px;
+    min-height: 14px;
+  }
 </style>
 </head>
 <body>
@@ -379,6 +441,16 @@
       <div id="abilitiesList"></div>
     </div>
 
+    <div class="section-title">Items</div>
+    <div class="items-hint">Search to add — up to 6 slots</div>
+    <div class="picker item-picker">
+      <input id="itemSearch" type="text" placeholder="Search an item…" autocomplete="off">
+      <div id="itemResults" class="results"></div>
+    </div>
+    <div id="itemSlots" class="item-slots"></div>
+    <div id="itemsTotal" class="items-total"></div>
+    <div id="itemsNote" class="items-note"></div>
+
     <div class="section-title">Combat</div>
     <div class="grid">
       <div class="stat"><div class="label">Attack Damage</div><div class="value" id="statDamage">—</div></div>
@@ -403,6 +475,8 @@ const CACHE_TS_KEY = 'runestone_hero_stats_ts_v1';
 const ABILITY_DATA_KEY = 'runestone_ability_data_v1';
 const HERO_ABILITY_KEY = 'runestone_hero_ability_map_v1';
 const ABILITY_TS_KEY = 'runestone_ability_ts_v1';
+const ITEM_DATA_KEY = 'runestone_item_data_v1';
+const ITEM_TS_KEY = 'runestone_item_ts_v1';
 const CACHE_MAX_AGE = 1000 * 60 * 60 * 24; // 24h
 
 let heroes = [];
@@ -410,6 +484,9 @@ let currentHero = null;
 let abilityData = {};
 let heroAbilityMap = {};
 let selectedTalents = {}; // tier (1-4) -> talent name
+let itemData = {};
+let itemList = []; // filtered, sorted array of purchasable items for search
+let itemSlots = []; // array of item keys currently equipped, length up to 6
 
 const statusEl = document.getElementById('status');
 const searchEl = document.getElementById('search');
@@ -417,6 +494,11 @@ const resultsEl = document.getElementById('results');
 const stoneEl = document.getElementById('stone');
 const levelEl = document.getElementById('level');
 const levelBadgeEl = document.getElementById('levelBadge');
+const itemSearchEl = document.getElementById('itemSearch');
+const itemResultsEl = document.getElementById('itemResults');
+const itemSlotsEl = document.getElementById('itemSlots');
+const itemsTotalEl = document.getElementById('itemsTotal');
+const itemsNoteEl = document.getElementById('itemsNote');
 
 function setStatus(msg, isError){
   statusEl.textContent = msg;
@@ -453,6 +535,48 @@ async function loadAbilityData(){
       console.warn('Could not load ability data', e);
     }
   }
+}
+
+// Items whose key starts with recipe_ are the recipe scroll itself, not the
+// crafted item — not useful in a loadout. Items with no cost but a tier are
+// neutral-drop items; those are time-gated, not gold-gated, and are deferred
+// to a separate decision-practice mini-sim per the project roadmap, so they
+// don't belong in this gold-shop loadout list.
+function buildItemList(){
+  itemList = Object.keys(itemData)
+    .filter(k => {
+      const it = itemData[k];
+      if (!it || !it.dname) return false;
+      if (k.indexOf('recipe_') === 0) return false;
+      if (!it.cost && it.tier) return false;
+      return true;
+    })
+    .map(k => Object.assign({ key: k }, itemData[k]))
+    .sort((a, b) => a.dname.localeCompare(b.dname));
+}
+
+async function loadItemData(){
+  const cached = localStorage.getItem(ITEM_DATA_KEY);
+  const cachedTs = parseInt(localStorage.getItem(ITEM_TS_KEY) || '0', 10);
+  const fresh = cached && (Date.now() - cachedTs < CACHE_MAX_AGE);
+
+  if (cached) {
+    try { itemData = JSON.parse(cached); } catch (e) { /* fall through to fetch */ }
+  }
+
+  if (!fresh) {
+    try {
+      const res = await fetch('https://api.opendota.com/api/constants/items');
+      if (!res.ok) throw new Error('Network response was not ok');
+      itemData = await res.json();
+      localStorage.setItem(ITEM_DATA_KEY, JSON.stringify(itemData));
+      localStorage.setItem(ITEM_TS_KEY, String(Date.now()));
+    } catch (e) {
+      // Non-fatal: items section just won't populate if this fails.
+      console.warn('Could not load item data', e);
+    }
+  }
+  buildItemList();
 }
 
 function renderAbilities(hero){
@@ -519,6 +643,7 @@ function parseTalentBonus(name){
   if (m = name.match(/^special_bonus_strength_(\d+)$/)) return { stat: 'str', amount: +m[1] };
   if (m = name.match(/^special_bonus_agility_(\d+)$/)) return { stat: 'agi', amount: +m[1] };
   if (m = name.match(/^special_bonus_intelligence_(\d+)$/)) return { stat: 'int', amount: +m[1] };
+  if (m = name.match(/^special_bonus_all_stats_(\d+)$/)) return { stat: 'allstats', amount: +m[1] };
   if (m = name.match(/^special_bonus_hp_regen_(\d+)$/)) return { stat: 'hpRegen', amount: +m[1] };
   if (m = name.match(/^special_bonus_mp_regen_(\d+)$/)) return { stat: 'mpRegen', amount: +m[1] };
   if (m = name.match(/^special_bonus_hp_(\d+)$/)) return { stat: 'health', amount: +m[1] };
@@ -659,10 +784,125 @@ function getActiveTalentBonuses(){
   Object.values(selectedTalents).forEach(name => {
     if (!name) return;
     const parsed = parseTalentBonus(name);
-    if (parsed) bonuses[parsed.stat] += parsed.amount;
+    if (!parsed) return;
+    if (parsed.stat === 'allstats') {
+      bonuses.str += parsed.amount;
+      bonuses.agi += parsed.amount;
+      bonuses.int += parsed.amount;
+    } else {
+      bonuses[parsed.stat] += parsed.amount;
+    }
   });
   return bonuses;
 }
+
+// Best-effort map of item attrib keys -> the same bonus fields talents use.
+// Item attrib keys aren't as uniform as talent names, so this is a lookup
+// table rather than a regex. Anything not listed here is display-only —
+// same accepted-limitation approach as unrecognized talent patterns.
+const ITEM_ATTR_MAP = {
+  bonus_strength: 'str',
+  bonus_agility: 'agi',
+  bonus_intellect: 'int',
+  bonus_health: 'health',
+  bonus_mana: 'mana',
+  bonus_health_regen: 'hpRegen',
+  bonus_hp_regen: 'hpRegen',
+  bonus_mana_regen: 'mpRegen',
+  bonus_mp_regen: 'mpRegen',
+  bonus_armor: 'armor',
+  bonus_magical_armor: 'mr',
+  bonus_magic_resistance: 'mr',
+  bonus_movement_speed: 'moveSpeed',
+  bonus_attack_speed: 'attackSpeedRating',
+  bonus_damage: 'damage',
+  bonus_attack_range: 'attackRange'
+};
+
+function getActiveItemBonuses(){
+  const bonuses = { str: 0, agi: 0, int: 0, health: 0, mana: 0, hpRegen: 0, mpRegen: 0,
+                     moveSpeed: 0, attackSpeedRating: 0, armor: 0, mr: 0, attackRange: 0, damage: 0 };
+  itemSlots.forEach(key => {
+    const it = itemData[key];
+    if (!it || !Array.isArray(it.attrib)) return;
+    it.attrib.forEach(a => {
+      if (!a || !a.key) return;
+      const k = String(a.key).toLowerCase();
+      let raw = Array.isArray(a.value) ? a.value[a.value.length - 1] : a.value;
+      const val = parseFloat(raw);
+      if (isNaN(val)) return;
+      if (k === 'bonus_all_stats' || k === 'bonus_stats') {
+        bonuses.str += val; bonuses.agi += val; bonuses.int += val;
+      } else if (ITEM_ATTR_MAP[k]) {
+        bonuses[ITEM_ATTR_MAP[k]] += val;
+      }
+    });
+  });
+  return bonuses;
+}
+
+function renderItemSlots(){
+  itemSlotsEl.innerHTML = '';
+  for (let i = 0; i < 6; i++) {
+    const key = itemSlots[i];
+    const slot = document.createElement('div');
+    if (key && itemData[key]) {
+      const it = itemData[key];
+      slot.className = 'item-slot filled';
+      slot.title = 'Tap to remove';
+      slot.innerHTML = `<img class="item-icon" src="https://cdn.cloudflare.steamstatic.com${it.img}" alt=""><div class="item-name">${it.dname}</div>`;
+      slot.addEventListener('click', () => removeItem(i));
+    } else {
+      slot.className = 'item-slot';
+      slot.innerHTML = '<div class="item-empty-label">+ Empty</div>';
+    }
+    itemSlotsEl.appendChild(slot);
+  }
+  const totalCost = itemSlots.reduce((sum, k) => sum + ((itemData[k] && itemData[k].cost) || 0), 0);
+  itemsTotalEl.textContent = itemSlots.length ? `Total: ${totalCost}g (${itemSlots.length}/6)` : '';
+}
+
+function addItem(key){
+  if (itemSlots.length >= 6) {
+    itemsNoteEl.textContent = 'Inventory full (6/6) — remove an item to add another.';
+    return;
+  }
+  itemSlots.push(key);
+  itemSearchEl.value = '';
+  itemResultsEl.classList.remove('open');
+  itemsNoteEl.textContent = '';
+  renderItemSlots();
+  recalculate();
+}
+
+function removeItem(index){
+  itemSlots.splice(index, 1);
+  itemsNoteEl.textContent = '';
+  renderItemSlots();
+  recalculate();
+}
+
+function renderItemResults(list){
+  itemResultsEl.innerHTML = '';
+  list.slice(0, 30).forEach(it => {
+    const row = document.createElement('div');
+    row.innerHTML = `<span>${it.dname}</span><span class="attr">${it.cost ? it.cost + 'g' : ''}</span>`;
+    row.addEventListener('click', () => addItem(it.key));
+    itemResultsEl.appendChild(row);
+  });
+  itemResultsEl.classList.toggle('open', list.length > 0);
+}
+
+itemSearchEl.addEventListener('input', () => {
+  const q = itemSearchEl.value.trim().toLowerCase();
+  if (!q) { itemResultsEl.classList.remove('open'); return; }
+  const matches = itemList.filter(it => it.dname.toLowerCase().includes(q));
+  renderItemResults(matches);
+});
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.item-picker')) itemResultsEl.classList.remove('open');
+});
 
 async function loadHeroes(){
   const cached = localStorage.getItem(CACHE_KEY);
@@ -734,6 +974,9 @@ function selectHero(h){
   stoneEl.classList.add('visible');
   renderAbilities(h);
   renderTalents(h);
+  itemSlots = [];
+  itemsNoteEl.textContent = '';
+  renderItemSlots();
   recalculate();
 }
 
@@ -784,7 +1027,23 @@ function recalculate(){
   if (!currentHero) return;
   const h = currentHero;
   const level = parseInt(levelEl.value, 10);
-  const bonus = getActiveTalentBonuses();
+  const talentBonus = getActiveTalentBonuses();
+  const itemBonus = getActiveItemBonuses();
+  const bonus = {
+    str: talentBonus.str + itemBonus.str,
+    agi: talentBonus.agi + itemBonus.agi,
+    int: talentBonus.int + itemBonus.int,
+    health: talentBonus.health + itemBonus.health,
+    mana: talentBonus.mana + itemBonus.mana,
+    hpRegen: talentBonus.hpRegen + itemBonus.hpRegen,
+    mpRegen: talentBonus.mpRegen + itemBonus.mpRegen,
+    moveSpeed: talentBonus.moveSpeed + itemBonus.moveSpeed,
+    attackSpeedRating: talentBonus.attackSpeedRating + itemBonus.attackSpeedRating,
+    armor: talentBonus.armor + itemBonus.armor,
+    mr: talentBonus.mr + itemBonus.mr,
+    attackRange: talentBonus.attackRange + itemBonus.attackRange,
+    damage: itemBonus.damage
+  };
 
   const str = statAtLevel(h.base_str, h.str_gain, level) + bonus.str;
   const agi = statAtLevel(h.base_agi, h.agi_gain, level) + bonus.agi;
@@ -815,8 +1074,8 @@ function recalculate(){
   } else {
     bonusDamage = int_;
   }
-  const dmgMin = Math.round(h.base_attack_min + bonusDamage);
-  const dmgMax = Math.round(h.base_attack_max + bonusDamage);
+  const dmgMin = Math.round(h.base_attack_min + bonusDamage + bonus.damage);
+  const dmgMax = Math.round(h.base_attack_max + bonusDamage + bonus.damage);
 
   // Attack speed: IAS from agility (agility gives 1 attack speed rating per point beyond base)
   const attackSpeedRating = 100 + (agi - h.base_agi) * 1 + bonus.attackSpeedRating;
@@ -843,8 +1102,10 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+renderItemSlots();
 loadHeroes();
 loadAbilityData();
+loadItemData();
 </script>
 </body>
 </html>
