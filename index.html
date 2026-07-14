@@ -490,23 +490,30 @@ function parseTalentBonus(name){
 function resolveTemplate(text, ownAbility, heroAbilityKeys){
   if (!text || !text.includes('{s:')) return text;
   return text.replace(/\{s:([a-zA-Z0-9_]+)\}/g, (match, rawKey) => {
+    // Own talent entry first (covers the "{s:value}" pattern some talents use),
+    // then fall back to every ability in the hero's kit for base-ability-derived values.
     const lookIn = [ownAbility].concat(
       (heroAbilityKeys || []).map(k => abilityData[k]).filter(Boolean)
     );
-    // Talent templates conventionally prefix the variable with "bonus_"
-    // even though the underlying attrib key on the base ability doesn't
-    // carry that prefix (e.g. {s:bonus_pull_strength} -> attrib key "pull_strength").
-    const candidates = [rawKey, rawKey.replace(/^bonus_/, '')];
+    const stripped = rawKey.replace(/^bonus_/i, '');
+    const candidates = [rawKey, stripped, 'value'].map(c => c.toLowerCase());
+
     for (const ab of lookIn) {
       if (ab && Array.isArray(ab.attrib)) {
-        for (const candidate of candidates) {
-          const found = ab.attrib.find(a => a.key === candidate);
-          if (found && found.value != null) {
-            return Array.isArray(found.value) ? found.value[found.value.length - 1] : found.value;
-          }
+        const found = ab.attrib.find(a => a.key && candidates.includes(a.key.toLowerCase()));
+        if (found && found.value != null) {
+          const val = Array.isArray(found.value) ? found.value[found.value.length - 1] : found.value;
+          // The surrounding template text usually already supplies its own %,
+          // so strip one off the value to avoid "40%%" style doubling.
+          return typeof val === 'string' ? val.replace(/%$/, '') : val;
         }
       }
     }
+
+    // Ability cooldown-reduction talents (very common pattern, e.g.
+    // "-{s:bonus_AbilityCooldown}s X Cooldown") don't carry their delta in
+    // attrib at all in this dataset — there's no reliable public field for
+    // "how much this talent reduces cooldown by". Rather than guess, note it.
     return '';
   }).replace(/\s{2,}/g, ' ').trim();
 }
