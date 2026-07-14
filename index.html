@@ -450,7 +450,7 @@ function renderAbilities(hero){
     const card = document.createElement('div');
     card.className = 'ability-card' + (isInnate ? ' innate' : '');
     const name = ab.dname || key;
-    const desc = ab.desc || ab.lore || 'No description available.';
+    const desc = resolveTemplate(ab.desc || ab.lore || 'No description available.', ab);
     card.innerHTML = `<div class="ability-name">${name}</div><div class="ability-desc">${desc}</div>`;
     container.appendChild(card);
   });
@@ -482,9 +482,25 @@ function parseTalentBonus(name){
   return null; // hero-unique or unrecognized pattern — display only
 }
 
+// dotaconstants dnames sometimes contain {s:variable_name} placeholders that
+// need to be substituted with the ability's actual special value.
+function resolveTemplate(text, ability){
+  if (!text || !text.includes('{s:')) return text;
+  return text.replace(/\{s:([a-zA-Z0-9_]+)\}/g, (match, key) => {
+    if (ability && Array.isArray(ability.attrib)) {
+      const found = ability.attrib.find(a => a.key === key);
+      if (found && found.value != null) {
+        const val = Array.isArray(found.value) ? found.value[found.value.length - 1] : found.value;
+        return val;
+      }
+    }
+    return ''; // unresolved — drop the placeholder rather than show raw braces
+  }).replace(/\s{2,}/g, ' ').trim();
+}
+
 function talentLabel(name){
   const ab = abilityData[name];
-  if (ab && ab.dname) return ab.dname;
+  if (ab && ab.dname) return resolveTemplate(ab.dname, ab);
   return name.replace(/^special_bonus_/, '').replace(/_/g, ' ');
 }
 
