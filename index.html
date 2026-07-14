@@ -219,6 +219,41 @@
 
   .stone[data-view="basic"] .advanced-only{ display:none; }
 
+  .ability-card{
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+  }
+  .ability-card .ability-name{
+    font-family:'Cinzel', serif;
+    font-size: 14px;
+    color: var(--teal);
+    margin-bottom: 4px;
+  }
+  .ability-card .ability-desc{
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--parchment);
+  }
+  .ability-card.innate .ability-name::after{
+    content: 'INNATE';
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 9px;
+    color: var(--gold);
+    border: 1px solid var(--gold-dim);
+    border-radius: 3px;
+    padding: 1px 5px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+  #abilitiesNote{
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
   footer{
     text-align:center;
     font-size:11px;
@@ -269,6 +304,9 @@
       <div class="stat advanced-only"><div class="label">Magic Resist</div><div class="value" id="statMR">—</div></div>
     </div>
 
+    <div class="section-title">Abilities</div>
+    <div id="abilitiesList"></div>
+
     <div class="section-title">Combat</div>
     <div class="grid">
       <div class="stat"><div class="label">Attack Damage</div><div class="value" id="statDamage">—</div></div>
@@ -290,10 +328,15 @@
 <script>
 const CACHE_KEY = 'runestone_hero_stats_v1';
 const CACHE_TS_KEY = 'runestone_hero_stats_ts_v1';
+const ABILITY_DATA_KEY = 'runestone_ability_data_v1';
+const HERO_ABILITY_KEY = 'runestone_hero_ability_map_v1';
+const ABILITY_TS_KEY = 'runestone_ability_ts_v1';
 const CACHE_MAX_AGE = 1000 * 60 * 60 * 24; // 24h
 
 let heroes = [];
 let currentHero = null;
+let abilityData = {};
+let heroAbilityMap = {};
 
 const statusEl = document.getElementById('status');
 const searchEl = document.getElementById('search');
@@ -305,6 +348,74 @@ const levelBadgeEl = document.getElementById('levelBadge');
 function setStatus(msg, isError){
   statusEl.textContent = msg;
   statusEl.classList.toggle('error', !!isError);
+}
+
+async function loadAbilityData(){
+  const cachedAbilities = localStorage.getItem(ABILITY_DATA_KEY);
+  const cachedMap = localStorage.getItem(HERO_ABILITY_KEY);
+  const cachedTs = parseInt(localStorage.getItem(ABILITY_TS_KEY) || '0', 10);
+  const fresh = cachedAbilities && cachedMap && (Date.now() - cachedTs < CACHE_MAX_AGE);
+
+  if (cachedAbilities && cachedMap) {
+    try {
+      abilityData = JSON.parse(cachedAbilities);
+      heroAbilityMap = JSON.parse(cachedMap);
+    } catch (e) { /* fall through to fetch */ }
+  }
+
+  if (!fresh) {
+    try {
+      const [abRes, haRes] = await Promise.all([
+        fetch('https://api.opendota.com/api/constants/abilities'),
+        fetch('https://api.opendota.com/api/constants/hero_abilities')
+      ]);
+      if (!abRes.ok || !haRes.ok) throw new Error('Network response was not ok');
+      abilityData = await abRes.json();
+      heroAbilityMap = await haRes.json();
+      localStorage.setItem(ABILITY_DATA_KEY, JSON.stringify(abilityData));
+      localStorage.setItem(HERO_ABILITY_KEY, JSON.stringify(heroAbilityMap));
+      localStorage.setItem(ABILITY_TS_KEY, String(Date.now()));
+    } catch (e) {
+      // Non-fatal: abilities section just won't populate if this fails.
+      console.warn('Could not load ability data', e);
+    }
+  }
+}
+
+function renderAbilities(hero){
+  const container = document.getElementById('abilitiesList');
+  container.innerHTML = '';
+
+  const heroKit = heroAbilityMap[hero.name];
+  if (!heroKit || !heroKit.abilities) {
+    container.innerHTML = '<div id="abilitiesNote">Ability data unavailable right now.</div>';
+    return;
+  }
+
+  const realAbilities = heroKit.abilities.filter(a => a && a !== 'generic_hidden');
+
+  realAbilities.forEach(key => {
+    const ab = abilityData[key];
+    if (!ab) return;
+
+    // Best-effort innate detection: dotaconstants marks innate abilities
+    // via a "behavior" field/array that includes "Innate", or via an
+    // explicit "innate" boolean depending on data version.
+    const behavior = ab.behavior;
+    const behaviorStr = Array.isArray(behavior) ? behavior.join(' ') : (behavior || '');
+    const isInnate = ab.innate === true || /innate/i.test(behaviorStr);
+
+    const card = document.createElement('div');
+    card.className = 'ability-card' + (isInnate ? ' innate' : '');
+    const name = ab.dname || key;
+    const desc = ab.desc || ab.lore || 'No description available.';
+    card.innerHTML = `<div class="ability-name">${name}</div><div class="ability-desc">${desc}</div>`;
+    container.appendChild(card);
+  });
+
+  if (!container.children.length) {
+    container.innerHTML = '<div id="abilitiesNote">Ability data unavailable right now.</div>';
+  }
 }
 
 async function loadHeroes(){
@@ -375,6 +486,7 @@ function selectHero(h){
   document.getElementById('heroName').textContent = h.localized_name;
   document.getElementById('heroAttr').textContent = attrLabel(h.primary_attr);
   stoneEl.classList.add('visible');
+  renderAbilities(h);
   recalculate();
 }
 
@@ -464,6 +576,7 @@ if ('serviceWorker' in navigator) {
 }
 
 loadHeroes();
+loadAbilityData();
 </script>
 </body>
 </html>
