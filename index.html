@@ -219,6 +219,28 @@
 
   .stone[data-view="basic"] .advanced-only{ display:none; }
 
+  .kit-toggle-row{
+    margin: 18px 0 4px;
+  }
+  #btnKitToggle{
+    width: 100%;
+    background: none;
+    border: 1px dashed var(--border);
+    color: var(--muted);
+    font-family:'IBM Plex Sans', sans-serif;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 8px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  #btnKitToggle:hover{
+    color: var(--gold);
+    border-color: var(--gold-dim);
+  }
+  #kitSection.collapsed{ display: none; }
+
   .ability-card{
     background: var(--bg);
     border: 1px solid var(--border);
@@ -342,11 +364,20 @@
       <div class="stat advanced-only"><div class="label">Magic Resist</div><div class="value" id="statMR">—</div></div>
     </div>
 
-    <div class="section-title">Talents</div>
-    <div id="talentTree"></div>
+    <div class="kit-toggle-row">
+      <button id="btnKitToggle" type="button">Hide Kit Info</button>
+    </div>
 
-    <div class="section-title">Abilities</div>
-    <div id="abilitiesList"></div>
+    <div id="kitSection">
+      <div class="section-title">Innate</div>
+      <div id="innateAbility"></div>
+
+      <div class="section-title">Talents</div>
+      <div id="talentTree"></div>
+
+      <div class="section-title">Abilities</div>
+      <div id="abilitiesList"></div>
+    </div>
 
     <div class="section-title">Combat</div>
     <div class="grid">
@@ -426,35 +457,53 @@ async function loadAbilityData(){
 
 function renderAbilities(hero){
   const container = document.getElementById('abilitiesList');
+  const innateContainer = document.getElementById('innateAbility');
   container.innerHTML = '';
+  innateContainer.innerHTML = '';
 
   const heroKit = heroAbilityMap[hero.name];
   if (!heroKit || !heroKit.abilities) {
     container.innerHTML = '<div id="abilitiesNote">Ability data unavailable right now.</div>';
+    innateContainer.innerHTML = '<div id="abilitiesNote">Not available right now.</div>';
     return;
   }
 
   const realAbilities = heroKit.abilities.filter(a => a && a !== 'generic_hidden');
 
-  realAbilities.forEach(key => {
+  function isInnateKey(key){
     const ab = abilityData[key];
-    if (!ab) return;
-
-    // Best-effort innate detection: dotaconstants marks innate abilities
-    // via a "behavior" field/array that includes "Innate", or via an
-    // explicit "innate" boolean depending on data version.
+    if (!ab) return false;
     const behavior = ab.behavior;
     const behaviorStr = Array.isArray(behavior) ? behavior.join(' ') : (behavior || '');
-    const isInnate = ab.is_innate === true || /innate/i.test(behaviorStr);
+    return ab.is_innate === true || /innate/i.test(behaviorStr);
+  }
 
+  function buildCard(key, isInnate){
+    const ab = abilityData[key];
+    if (!ab) return null;
     const card = document.createElement('div');
     card.className = 'ability-card' + (isInnate ? ' innate' : '');
     const name = ab.dname || key;
     const desc = resolveTemplate(ab.desc || ab.lore || 'No description available.', ab, realAbilities);
     card.innerHTML = `<div class="ability-name">${name}</div><div class="ability-desc">${desc}</div>`;
-    container.appendChild(card);
-  });
+    return card;
+  }
 
+  const innateKeys = realAbilities.filter(isInnateKey);
+  const otherKeys = realAbilities.filter(k => !isInnateKey(k));
+
+  innateKeys.forEach(key => {
+    const card = buildCard(key, true);
+    if (card) innateContainer.appendChild(card);
+  });
+  if (!innateContainer.children.length) {
+    innateContainer.innerHTML = '<div id="abilitiesNote">No innate ability on record for this hero.</div>';
+  }
+
+  otherKeys.forEach(key => {
+    const card = buildCard(key, false);
+    if (card) container.appendChild(card);
+  });
   if (!container.children.length) {
     container.innerHTML = '<div id="abilitiesNote">Ability data unavailable right now.</div>';
   }
@@ -709,6 +758,22 @@ btnBasic.addEventListener('click', () => setView('basic'));
 btnAdvanced.addEventListener('click', () => setView('advanced'));
 
 setView(localStorage.getItem(VIEW_KEY) || 'basic');
+
+const KIT_KEY = 'runestone_kit_pref';
+const btnKitToggle = document.getElementById('btnKitToggle');
+const kitSection = document.getElementById('kitSection');
+
+function setKitCollapsed(collapsed){
+  kitSection.classList.toggle('collapsed', collapsed);
+  btnKitToggle.textContent = collapsed ? 'Show Kit Info' : 'Hide Kit Info';
+  localStorage.setItem(KIT_KEY, collapsed ? 'collapsed' : 'expanded');
+}
+
+btnKitToggle.addEventListener('click', () => {
+  setKitCollapsed(!kitSection.classList.contains('collapsed'));
+});
+
+setKitCollapsed(localStorage.getItem(KIT_KEY) === 'collapsed');
 
 // Strength/Agility/Intelligence gains apply from level 1 baseline: stat(level) = base + gain*(level-1)
 function statAtLevel(base, gain, level){

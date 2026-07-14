@@ -1,4 +1,4 @@
-const CACHE_NAME = 'runestone-shell-v12';
+const CACHE_NAME = 'runestone-shell-v14';
 const SHELL_FILES = [
   './index.html',
   './manifest.json'
