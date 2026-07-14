@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#12100E">
+<title>Runestone — Dota 2 Hero Calculator</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap');
+
+  :root{
+    --bg: #12100E;
+    --panel: #1B1815;
+    --panel-raised: #221E19;
+    --gold: #C9A227;
+    --gold-dim: #8A7220;
+    --teal: #3FA796;
+    --parchment: #EDE6D6;
+    --muted: #8A8478;
+    --rust: #B5432B;
+    --border: #33291A;
+  }
+
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ height:100%; margin:0; }
+  body{
+    background: radial-gradient(ellipse at top, #1a1611 0%, var(--bg) 60%);
+    color: var(--parchment);
+    font-family:'IBM Plex Sans', sans-serif;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    min-height:100%;
+  }
+
+  header{
+    padding: 20px 16px 12px;
+    text-align:center;
+  }
+  header h1{
+    font-family:'Cinzel', serif;
+    font-weight:700;
+    font-size: 22px;
+    letter-spacing: 0.06em;
+    margin: 0;
+    color: var(--gold);
+    text-transform: uppercase;
+  }
+  header p{
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 0.03em;
+  }
+
+  #status{
+    text-align:center;
+    font-size:12px;
+    color:var(--muted);
+    padding: 4px 16px 12px;
+  }
+  #status.error{ color: var(--rust); }
+
+  main{ max-width: 520px; margin:0 auto; padding: 0 16px 40px; }
+
+  .picker{
+    position: relative;
+    margin-bottom: 16px;
+  }
+  .picker input{
+    width:100%;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--parchment);
+    font-family:'IBM Plex Sans', sans-serif;
+    font-size: 16px;
+    padding: 14px 16px;
+    border-radius: 4px;
+    outline: none;
+  }
+  .picker input:focus{ border-color: var(--gold-dim); }
+  .results{
+    position:absolute; top:calc(100% + 4px); left:0; right:0;
+    background: var(--panel-raised);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    max-height: 260px; overflow-y:auto;
+    z-index: 10;
+    display:none;
+  }
+  .results.open{ display:block; }
+  .results div{
+    padding: 10px 14px;
+    font-size: 14px;
+    cursor:pointer;
+    border-bottom: 1px solid var(--border);
+    display:flex; justify-content:space-between; gap:8px;
+  }
+  .results div:last-child{ border-bottom:none; }
+  .results div:hover{ background: var(--panel); }
+  .results span.attr{
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    text-transform:uppercase;
+  }
+
+  .stone{
+    background: linear-gradient(180deg, var(--panel-raised), var(--panel));
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 20px;
+    position: relative;
+    display:none;
+  }
+  .stone.visible{ display:block; }
+  .stone::before{
+    content:'';
+    position:absolute; inset: 6px;
+    border: 1px solid rgba(201,162,39,0.18);
+    border-radius: 3px;
+    pointer-events:none;
+  }
+
+  .hero-row{
+    display:flex; align-items:center; gap:14px; margin-bottom: 18px;
+  }
+  .hero-row img{
+    width: 64px; height:36px; border-radius:3px; border:1px solid var(--border);
+    object-fit:cover;
+  }
+  .hero-name{ font-family:'Cinzel', serif; font-size:18px; font-weight:700; color:var(--parchment); }
+  .hero-attr{ font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gold); margin-top:2px; }
+
+  .level-row{
+    display:flex; align-items:center; gap:12px; margin-bottom: 20px;
+  }
+  .level-row label{ font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; white-space:nowrap; }
+  .level-row input[type=range]{ flex:1; accent-color: var(--gold); }
+  .level-badge{
+    font-family:'IBM Plex Mono', monospace;
+    background: var(--bg);
+    border:1px solid var(--border);
+    color: var(--gold);
+    padding: 4px 10px;
+    border-radius:3px;
+    font-size:14px;
+    min-width: 34px;
+    text-align:center;
+  }
+
+  .grid{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .stat{
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 12px 14px;
+  }
+  .stat .label{
+    font-size: 10px;
+    text-transform:uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+  .stat .value{
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 20px;
+    font-weight:600;
+    color: var(--parchment);
+    margin-top: 2px;
+  }
+  .stat .value small{
+    font-size: 12px;
+    color: var(--teal);
+    font-weight:400;
+    margin-left: 4px;
+  }
+
+  .section-title{
+    font-family:'Cinzel', serif;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--gold-dim);
+    margin: 20px 0 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  footer{
+    text-align:center;
+    font-size:11px;
+    color:var(--muted);
+    padding: 24px 16px 12px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Runestone</h1>
+  <p>Dota 2 hero calculator · live patch data</p>
+</header>
+<div id="status">Loading current patch data…</div>
+
+<main>
+  <div class="picker">
+    <input id="search" type="text" placeholder="Search a hero…" autocomplete="off">
+    <div id="results" class="results"></div>
+  </div>
+
+  <div id="stone" class="stone">
+    <div class="hero-row">
+      <img id="heroImg" src="" alt="">
+      <div>
+        <div id="heroName" class="hero-name">—</div>
+        <div id="heroAttr" class="hero-attr">—</div>
+      </div>
+    </div>
+
+    <div class="level-row">
+      <label for="level">Level</label>
+      <input id="level" type="range" min="1" max="30" value="1">
+      <div id="levelBadge" class="level-badge">1</div>
+    </div>
+
+    <div class="section-title">Core</div>
+    <div class="grid">
+      <div class="stat"><div class="label">Health</div><div class="value" id="statHealth">—</div></div>
+      <div class="stat"><div class="label">Mana</div><div class="value" id="statMana">—</div></div>
+      <div class="stat"><div class="label">Armor</div><div class="value" id="statArmor">—</div></div>
+      <div class="stat"><div class="label">Magic Resist</div><div class="value" id="statMR">—</div></div>
+    </div>
+
+    <div class="section-title">Combat</div>
+    <div class="grid">
+      <div class="stat"><div class="label">Attack Damage</div><div class="value" id="statDamage">—</div></div>
+      <div class="stat"><div class="label">Attacks / Sec</div><div class="value" id="statAtkSpeed">—</div></div>
+      <div class="stat"><div class="label">Move Speed</div><div class="value" id="statMS">—</div></div>
+      <div class="stat"><div class="label">Attack Range</div><div class="value" id="statRange">—</div></div>
+    </div>
+
+    <div class="section-title">Regen</div>
+    <div class="grid">
+      <div class="stat"><div class="label">HP Regen /s</div><div class="value" id="statHPRegen">—</div></div>
+      <div class="stat"><div class="label">MP Regen /s</div><div class="value" id="statMPRegen">—</div></div>
+    </div>
+  </div>
+</main>
+
+<footer>Data via OpenDota · cached locally, refreshed daily</footer>
+
+<script>
+const CACHE_KEY = 'runestone_hero_stats_v1';
+const CACHE_TS_KEY = 'runestone_hero_stats_ts_v1';
+const CACHE_MAX_AGE = 1000 * 60 * 60 * 24; // 24h
+
+let heroes = [];
+let currentHero = null;
+
+const statusEl = document.getElementById('status');
+const searchEl = document.getElementById('search');
+const resultsEl = document.getElementById('results');
+const stoneEl = document.getElementById('stone');
+const levelEl = document.getElementById('level');
+const levelBadgeEl = document.getElementById('levelBadge');
+
+function setStatus(msg, isError){
+  statusEl.textContent = msg;
+  statusEl.classList.toggle('error', !!isError);
+}
+
+async function loadHeroes(){
+  const cached = localStorage.getItem(CACHE_KEY);
+  const cachedTs = parseInt(localStorage.getItem(CACHE_TS_KEY) || '0', 10);
+  const fresh = cached && (Date.now() - cachedTs < CACHE_MAX_AGE);
+
+  if (cached) {
+    try {
+      heroes = JSON.parse(cached);
+      setStatus(fresh ? 'Using cached patch data' : 'Using cached data — refreshing…');
+    } catch(e) { /* fall through to fetch */ }
+  }
+
+  if (!fresh) {
+    try {
+      const res = await fetch('https://api.opendota.com/api/heroStats');
+      if (!res.ok) throw new Error('Network response was not ok');
+      const data = await res.json();
+      heroes = data;
+      localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+      localStorage.setItem(CACHE_TS_KEY, String(Date.now()));
+      setStatus('Live patch data loaded');
+    } catch (e) {
+      if (heroes.length) {
+        setStatus('Offline — showing cached data', true);
+      } else {
+        setStatus('Could not load hero data. Check your connection.', true);
+      }
+    }
+  }
+}
+
+function attrLabel(a){
+  if (a === 'str') return 'Strength';
+  if (a === 'agi') return 'Agility';
+  if (a === 'int') return 'Intelligence';
+  return 'Universal';
+}
+
+function renderResults(list){
+  resultsEl.innerHTML = '';
+  list.slice(0, 30).forEach(h => {
+    const row = document.createElement('div');
+    row.innerHTML = `<span>${h.localized_name}</span><span class="attr">${h.primary_attr}</span>`;
+    row.addEventListener('click', () => selectHero(h));
+    resultsEl.appendChild(row);
+  });
+  resultsEl.classList.toggle('open', list.length > 0);
+}
+
+searchEl.addEventListener('input', () => {
+  const q = searchEl.value.trim().toLowerCase();
+  if (!q) { resultsEl.classList.remove('open'); return; }
+  const matches = heroes.filter(h => h.localized_name.toLowerCase().includes(q));
+  renderResults(matches);
+});
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.picker')) resultsEl.classList.remove('open');
+});
+
+function selectHero(h){
+  currentHero = h;
+  searchEl.value = h.localized_name;
+  resultsEl.classList.remove('open');
+  document.getElementById('heroImg').src = 'https://cdn.cloudflare.steamstatic.com' + h.img;
+  document.getElementById('heroName').textContent = h.localized_name;
+  document.getElementById('heroAttr').textContent = attrLabel(h.primary_attr);
+  stoneEl.classList.add('visible');
+  recalculate();
+}
+
+levelEl.addEventListener('input', () => {
+  levelBadgeEl.textContent = levelEl.value;
+  recalculate();
+});
+
+// Strength/Agility/Intelligence gains apply from level 1 baseline: stat(level) = base + gain*(level-1)
+function statAtLevel(base, gain, level){
+  return base + gain * (level - 1);
+}
+
+function recalculate(){
+  if (!currentHero) return;
+  const h = currentHero;
+  const level = parseInt(levelEl.value, 10);
+
+  const str = statAtLevel(h.base_str, h.str_gain, level);
+  const agi = statAtLevel(h.base_agi, h.agi_gain, level);
+  const int_ = statAtLevel(h.base_int, h.int_gain, level);
+
+  // Health & mana
+  const health = h.base_health + str * 22;
+  const mana = h.base_mana + int_ * 12;
+
+  // Regen
+  const hpRegen = h.base_health_regen + str * 0.1;
+  const mpRegen = h.base_mana_regen + int_ * 0.05;
+
+  // Armor: base armor already includes agility at base_agi; add gain contribution
+  const armor = h.base_armor + (agi - h.base_agi) * 0.167;
+
+  // Magic resistance stored as base_mr (usually 25, flat) — displayed as-is
+  const mr = h.base_mr;
+
+  // Attack damage: primary stat (or 0.7x all three if Universal) added to base weapon damage range
+  let bonusDamage;
+  if (h.primary_attr === 'all') {
+    bonusDamage = (str + agi + int_) * 0.7;
+  } else if (h.primary_attr === 'str') {
+    bonusDamage = str;
+  } else if (h.primary_attr === 'agi') {
+    bonusDamage = agi;
+  } else {
+    bonusDamage = int_;
+  }
+  const dmgMin = Math.round(h.base_attack_min + bonusDamage);
+  const dmgMax = Math.round(h.base_attack_max + bonusDamage);
+
+  // Attack speed: IAS from agility (agility gives 1 attack speed rating per point beyond base)
+  const attackSpeedRating = 100 + (agi - h.base_agi) * 1;
+  const attacksPerSec = (attackSpeedRating / 100) / (h.base_attack_time / 100) * h.attack_rate;
+
+  document.getElementById('statHealth').innerHTML = `${Math.round(health)}`;
+  document.getElementById('statMana').innerHTML = `${Math.round(mana)}`;
+  document.getElementById('statArmor').innerHTML = `${armor.toFixed(1)}`;
+  document.getElementById('statMR').innerHTML = `${mr}%`;
+  document.getElementById('statDamage').innerHTML = `${dmgMin}\u2013${dmgMax}`;
+  document.getElementById('statAtkSpeed').innerHTML = `${attacksPerSec.toFixed(2)}`;
+  document.getElementById('statMS').innerHTML = `${h.move_speed}`;
+  document.getElementById('statRange').innerHTML = `${h.attack_range}`;
+  document.getElementById('statHPRegen').innerHTML = `${hpRegen.toFixed(1)}`;
+  document.getElementById('statMPRegen').innerHTML = `${mpRegen.toFixed(1)}`;
+}
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('service-worker.js').catch(() => {});
+  });
+}
+
+loadHeroes();
+</script>
+</body>
+</html>
