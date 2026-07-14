@@ -445,12 +445,12 @@ function renderAbilities(hero){
     // explicit "innate" boolean depending on data version.
     const behavior = ab.behavior;
     const behaviorStr = Array.isArray(behavior) ? behavior.join(' ') : (behavior || '');
-    const isInnate = ab.innate === true || /innate/i.test(behaviorStr);
+    const isInnate = ab.is_innate === true || /innate/i.test(behaviorStr);
 
     const card = document.createElement('div');
     card.className = 'ability-card' + (isInnate ? ' innate' : '');
     const name = ab.dname || key;
-    const desc = resolveTemplate(ab.desc || ab.lore || 'No description available.', ab);
+    const desc = resolveTemplate(ab.desc || ab.lore || 'No description available.', ab, realAbilities);
     card.innerHTML = `<div class="ability-name">${name}</div><div class="ability-desc">${desc}</div>`;
     container.appendChild(card);
   });
@@ -482,27 +482,36 @@ function parseTalentBonus(name){
   return null; // hero-unique or unrecognized pattern — display only
 }
 
-// dotaconstants dnames sometimes contain {s:variable_name} placeholders that
-// need to be substituted with the ability's actual special value.
-function resolveTemplate(text, ability){
+// dotaconstants dnames sometimes contain {s:variable_name} placeholders.
+// The value for a talent's placeholder usually lives on the BASE ability it
+// modifies (e.g. naga_siren_reel_in.attrib), not on the talent's own entry
+// (which is often just a bare dname). So search across all of the hero's
+// abilities' attrib arrays for a matching key.
+function resolveTemplate(text, ownAbility, heroAbilityKeys){
   if (!text || !text.includes('{s:')) return text;
   return text.replace(/\{s:([a-zA-Z0-9_]+)\}/g, (match, key) => {
-    if (ability && Array.isArray(ability.attrib)) {
-      const found = ability.attrib.find(a => a.key === key);
-      if (found && found.value != null) {
-        const val = Array.isArray(found.value) ? found.value[found.value.length - 1] : found.value;
-        return val;
+    const lookIn = [ownAbility].concat(
+      (heroAbilityKeys || []).map(k => abilityData[k]).filter(Boolean)
+    );
+    for (const ab of lookIn) {
+      if (ab && Array.isArray(ab.attrib)) {
+        const found = ab.attrib.find(a => a.key === key);
+        if (found && found.value != null) {
+          return Array.isArray(found.value) ? found.value[found.value.length - 1] : found.value;
+        }
       }
     }
-    return ''; // unresolved — drop the placeholder rather than show raw braces
+    return ''; // still unresolved — drop the placeholder rather than show raw braces
   }).replace(/\s{2,}/g, ' ').trim();
 }
 
-function talentLabel(name){
+function talentLabel(name, heroAbilityKeys){
   const ab = abilityData[name];
-  if (ab && ab.dname) return resolveTemplate(ab.dname, ab);
+  if (ab && ab.dname) return resolveTemplate(ab.dname, ab, heroAbilityKeys);
   return name.replace(/^special_bonus_/, '').replace(/_/g, ' ');
 }
+
+let currentHeroAbilityKeys = [];
 
 function renderTalents(hero){
   const container = document.getElementById('talentTree');
@@ -512,8 +521,10 @@ function renderTalents(hero){
   const heroKit = heroAbilityMap[hero.name];
   if (!heroKit || !heroKit.talents || !heroKit.talents.length) {
     container.innerHTML = '<div id="abilitiesNote">Talent data unavailable right now.</div>';
+    currentHeroAbilityKeys = [];
     return;
   }
+  currentHeroAbilityKeys = heroKit.abilities || [];
 
   const tiers = {};
   heroKit.talents.forEach(t => {
@@ -540,7 +551,7 @@ function renderTalents(hero){
     opts.forEach(name => {
       const opt = document.createElement('div');
       opt.className = 'talent-option';
-      opt.textContent = talentLabel(name);
+      opt.textContent = talentLabel(name, currentHeroAbilityKeys);
       opt.addEventListener('click', () => {
         const level = parseInt(levelEl.value, 10);
         if (level < realLevel) return;
@@ -567,7 +578,7 @@ function renderTalentSelection(){
       tierEl.classList.toggle('locked', shouldLock);
     }
     tierEl.querySelectorAll('.talent-option').forEach(opt => {
-      const shouldSelect = !!(selectedTalents[tier] && opt.textContent === talentLabel(selectedTalents[tier]));
+      const shouldSelect = !!(selectedTalents[tier] && opt.textContent === talentLabel(selectedTalents[tier], currentHeroAbilityKeys));
       if (opt.classList.contains('selected') !== shouldSelect) {
         opt.classList.toggle('selected', shouldSelect);
       }
