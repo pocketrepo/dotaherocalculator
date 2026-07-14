@@ -546,9 +546,15 @@ function renderTalentSelection(){
   document.querySelectorAll('.talent-tier').forEach(tierEl => {
     const tier = parseInt(tierEl.dataset.tier, 10);
     const realLevel = TALENT_TIER_LEVEL[tier];
-    tierEl.classList.toggle('locked', level < realLevel);
+    const shouldLock = level < realLevel;
+    if (tierEl.classList.contains('locked') !== shouldLock) {
+      tierEl.classList.toggle('locked', shouldLock);
+    }
     tierEl.querySelectorAll('.talent-option').forEach(opt => {
-      opt.classList.toggle('selected', selectedTalents[tier] && opt.textContent === talentLabel(selectedTalents[tier]));
+      const shouldSelect = !!(selectedTalents[tier] && opt.textContent === talentLabel(selectedTalents[tier]));
+      if (opt.classList.contains('selected') !== shouldSelect) {
+        opt.classList.toggle('selected', shouldSelect);
+      }
     });
   });
 }
