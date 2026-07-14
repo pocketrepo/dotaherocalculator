@@ -524,7 +524,12 @@ function renderTalents(hero){
     currentHeroAbilityKeys = [];
     return;
   }
-  currentHeroAbilityKeys = heroKit.abilities || [];
+  // Search space for {s:...} lookups needs to include sub-abilities (like
+  // Naga Siren's Reel In, a follow-up to Ensnare) that don't appear in the
+  // hero's slotted ability list. Any key sharing the hero's name prefix
+  // is fair game.
+  const heroPrefix = hero.name.replace('npc_dota_hero_', '');
+  currentHeroAbilityKeys = Object.keys(abilityData).filter(k => k.startsWith(heroPrefix + '_'));
 
   const tiers = {};
   heroKit.talents.forEach(t => {
