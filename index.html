@@ -193,6 +193,32 @@
     border-bottom: 1px solid var(--border);
   }
 
+  .view-toggle{
+    display:flex;
+    gap: 6px;
+    margin-bottom: 18px;
+  }
+  .view-toggle button{
+    flex:1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family:'IBM Plex Sans', sans-serif;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 8px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .view-toggle button.active{
+    background: var(--panel-raised);
+    color: var(--gold);
+    border-color: var(--gold-dim);
+  }
+
+  .stone[data-view="basic"] .advanced-only{ display:none; }
+
   footer{
     text-align:center;
     font-size:11px;
@@ -215,13 +241,18 @@
     <div id="results" class="results"></div>
   </div>
 
-  <div id="stone" class="stone">
+  <div id="stone" class="stone" data-view="basic">
     <div class="hero-row">
       <img id="heroImg" src="" alt="">
       <div>
         <div id="heroName" class="hero-name">—</div>
         <div id="heroAttr" class="hero-attr">—</div>
       </div>
+    </div>
+
+    <div class="view-toggle">
+      <button id="btnBasic" class="active" type="button">Basic</button>
+      <button id="btnAdvanced" type="button">Advanced</button>
     </div>
 
     <div class="level-row">
@@ -235,7 +266,7 @@
       <div class="stat"><div class="label">Health</div><div class="value" id="statHealth">—</div></div>
       <div class="stat"><div class="label">Mana</div><div class="value" id="statMana">—</div></div>
       <div class="stat"><div class="label">Armor</div><div class="value" id="statArmor">—</div></div>
-      <div class="stat"><div class="label">Magic Resist</div><div class="value" id="statMR">—</div></div>
+      <div class="stat advanced-only"><div class="label">Magic Resist</div><div class="value" id="statMR">—</div></div>
     </div>
 
     <div class="section-title">Combat</div>
@@ -351,6 +382,22 @@ levelEl.addEventListener('input', () => {
   levelBadgeEl.textContent = levelEl.value;
   recalculate();
 });
+
+const VIEW_KEY = 'runestone_view_pref';
+const btnBasic = document.getElementById('btnBasic');
+const btnAdvanced = document.getElementById('btnAdvanced');
+
+function setView(view){
+  stoneEl.dataset.view = view;
+  btnBasic.classList.toggle('active', view === 'basic');
+  btnAdvanced.classList.toggle('active', view === 'advanced');
+  localStorage.setItem(VIEW_KEY, view);
+}
+
+btnBasic.addEventListener('click', () => setView('basic'));
+btnAdvanced.addEventListener('click', () => setView('advanced'));
+
+setView(localStorage.getItem(VIEW_KEY) || 'basic');
 
 // Strength/Agility/Intelligence gains apply from level 1 baseline: stat(level) = base + gain*(level-1)
 function statAtLevel(base, gain, level){
