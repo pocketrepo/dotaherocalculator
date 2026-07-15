@@ -290,6 +290,19 @@
     margin-left: 8px;
     vertical-align: middle;
   }
+  .aghs-badge{
+    display:inline-block;
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 9px;
+    color: var(--teal);
+    border: 1px solid var(--teal);
+    border-radius: 3px;
+    padding: 1px 5px;
+    margin-left: 8px;
+    vertical-align: middle;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
   #abilitiesNote{
     font-size: 11px;
     color: var(--muted);
@@ -459,6 +472,13 @@
 
       <div class="section-title">Abilities</div>
       <div id="abilitiesList"></div>
+
+      <div class="section-title">Aghanim's</div>
+      <div class="view-toggle">
+        <button id="btnScepter" type="button">Scepter</button>
+        <button id="btnShard" type="button">Shard</button>
+      </div>
+      <div id="aghsCards"></div>
     </div>
 
     <div class="section-title">Items</div>
@@ -497,6 +517,8 @@ const HERO_ABILITY_KEY = 'runestone_hero_ability_map_v1';
 const ABILITY_TS_KEY = 'runestone_ability_ts_v1';
 const ITEM_DATA_KEY = 'runestone_item_data_v1';
 const ITEM_TS_KEY = 'runestone_item_ts_v1';
+const AGHS_DATA_KEY = 'runestone_aghs_data_v1';
+const AGHS_TS_KEY = 'runestone_aghs_ts_v1';
 const CACHE_MAX_AGE = 1000 * 60 * 60 * 24; // 24h
 
 let heroes = [];
@@ -507,6 +529,9 @@ let selectedTalents = {}; // tier (1-4) -> talent name
 let itemData = {};
 let itemList = []; // filtered, sorted array of purchasable items for search
 let itemSlots = []; // array of item keys currently equipped, length up to 6
+let aghsData = {}; // hero.name -> { has_scepter, scepter_desc, scepter_skill_name, scepter_new_skill, has_shard, shard_desc, shard_skill_name, shard_new_skill }
+let scepterActive = false;
+let shardActive = false;
 
 const statusEl = document.getElementById('status');
 const searchEl = document.getElementById('search');
@@ -519,6 +544,9 @@ const itemResultsEl = document.getElementById('itemResults');
 const itemSlotsEl = document.getElementById('itemSlots');
 const itemsTotalEl = document.getElementById('itemsTotal');
 const itemsNoteEl = document.getElementById('itemsNote');
+const btnScepter = document.getElementById('btnScepter');
+const btnShard = document.getElementById('btnShard');
+const aghsCardsEl = document.getElementById('aghsCards');
 
 function setStatus(msg, isError){
   statusEl.textContent = msg;
@@ -925,6 +953,91 @@ document.addEventListener('click', (e) => {
   if (!e.target.closest('.item-picker')) itemResultsEl.classList.remove('open');
 });
 
+// aghs_desc is a flat array (one entry per hero), not keyed by hero name like
+// the other constants endpoints — reindex it by hero_name (matches hero.name,
+// e.g. "npc_dota_hero_antimage") so lookups match the pattern used elsewhere.
+async function loadAghsData(){
+  const cached = localStorage.getItem(AGHS_DATA_KEY);
+  const cachedTs = parseInt(localStorage.getItem(AGHS_TS_KEY) || '0', 10);
+  const fresh = cached && (Date.now() - cachedTs < CACHE_MAX_AGE);
+  let rawList = null;
+
+  if (cached) {
+    try { rawList = JSON.parse(cached); } catch (e) { /* fall through to fetch */ }
+  }
+
+  if (!fresh) {
+    try {
+      const res = await fetch('https://api.opendota.com/api/constants/aghs_desc');
+      if (!res.ok) throw new Error('Network response was not ok');
+      rawList = await res.json();
+      localStorage.setItem(AGHS_DATA_KEY, JSON.stringify(rawList));
+      localStorage.setItem(AGHS_TS_KEY, String(Date.now()));
+    } catch (e) {
+      // Non-fatal: Aghanim's section just won't populate if this fails.
+      console.warn('Could not load Aghanim\'s data', e);
+    }
+  }
+
+  aghsData = {};
+  if (Array.isArray(rawList)) {
+    rawList.forEach(entry => {
+      if (entry && entry.hero_name) aghsData[entry.hero_name] = entry;
+    });
+  }
+}
+
+function buildAghsCard(kind, skillName, desc, isNew){
+  const badge = kind.toUpperCase() + (isNew ? ' · NEW ABILITY' : ' UPGRADE');
+  return `<div class="ability-card"><div class="ability-name">${skillName}<span class="aghs-badge">${badge}</span></div><div class="ability-desc">${desc}</div></div>`;
+}
+
+function renderAghs(hero){
+  aghsCardsEl.innerHTML = '';
+  if (!scepterActive && !shardActive) return;
+
+  const entry = aghsData[hero.name];
+  if (!entry) {
+    aghsCardsEl.innerHTML = '<div id="abilitiesNote">Aghanim\'s data unavailable right now.</div>';
+    return;
+  }
+
+  const parts = [];
+  if (scepterActive) {
+    parts.push(entry.has_scepter
+      ? buildAghsCard('Scepter', entry.scepter_skill_name, entry.scepter_desc, entry.scepter_new_skill)
+      : '<div id="abilitiesNote">No Scepter upgrade for this hero.</div>');
+  }
+  if (shardActive) {
+    parts.push(entry.has_shard
+      ? buildAghsCard('Shard', entry.shard_skill_name, entry.shard_desc, entry.shard_new_skill)
+      : '<div id="abilitiesNote">No Shard upgrade for this hero.</div>');
+  }
+  aghsCardsEl.innerHTML = parts.join('');
+}
+
+const SCEPTER_PREF_KEY = 'runestone_scepter_pref';
+const SHARD_PREF_KEY = 'runestone_shard_pref';
+
+btnScepter.addEventListener('click', () => {
+  scepterActive = !scepterActive;
+  btnScepter.classList.toggle('active', scepterActive);
+  localStorage.setItem(SCEPTER_PREF_KEY, scepterActive ? 'on' : 'off');
+  if (currentHero) renderAghs(currentHero);
+});
+
+btnShard.addEventListener('click', () => {
+  shardActive = !shardActive;
+  btnShard.classList.toggle('active', shardActive);
+  localStorage.setItem(SHARD_PREF_KEY, shardActive ? 'on' : 'off');
+  if (currentHero) renderAghs(currentHero);
+});
+
+scepterActive = localStorage.getItem(SCEPTER_PREF_KEY) === 'on';
+shardActive = localStorage.getItem(SHARD_PREF_KEY) === 'on';
+btnScepter.classList.toggle('active', scepterActive);
+btnShard.classList.toggle('active', shardActive);
+
 async function loadHeroes(){
   const cached = localStorage.getItem(CACHE_KEY);
   const cachedTs = parseInt(localStorage.getItem(CACHE_TS_KEY) || '0', 10);
@@ -995,6 +1108,7 @@ function selectHero(h){
   stoneEl.classList.add('visible');
   renderAbilities(h);
   renderTalents(h);
+  renderAghs(h);
   itemSlots = [];
   itemsNoteEl.textContent = '';
   renderItemSlots();
@@ -1127,6 +1241,7 @@ renderItemSlots();
 loadHeroes();
 loadAbilityData();
 loadItemData();
+loadAghsData();
 </script>
 </body>
 </html>
