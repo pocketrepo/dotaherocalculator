@@ -105,6 +105,26 @@
     font-size: 11px;
     color: var(--muted);
     text-transform:uppercase;
+    flex-shrink: 0;
+  }
+  .results span.result-label{
+    display:flex;
+    align-items:center;
+    gap: 8px;
+    min-width: 0;
+    overflow:hidden;
+  }
+  .results span.result-label span{
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .result-icon{
+    width: 26px; height: 19px;
+    border-radius: 2px;
+    border: 1px solid var(--border);
+    object-fit: cover;
+    flex-shrink: 0;
   }
 
   .stone{
@@ -886,7 +906,8 @@ function renderItemResults(list){
   itemResultsEl.innerHTML = '';
   list.slice(0, 30).forEach(it => {
     const row = document.createElement('div');
-    row.innerHTML = `<span>${it.dname}</span><span class="attr">${it.cost ? it.cost + 'g' : ''}</span>`;
+    const icon = it.img ? `<img class="result-icon" src="https://cdn.cloudflare.steamstatic.com${it.img}" alt="">` : '';
+    row.innerHTML = `<span class="result-label">${icon}<span>${it.dname}</span></span><span class="attr">${it.cost ? it.cost + 'g' : ''}</span>`;
     row.addEventListener('click', () => addItem(it.key));
     itemResultsEl.appendChild(row);
   });
