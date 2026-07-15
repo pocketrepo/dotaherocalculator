@@ -303,6 +303,40 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
+  .aghs-grid{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 8px;
+  }
+  .aghs-card{
+    aspect-ratio: 1 / 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 12px 14px;
+    overflow-y: auto;
+  }
+  .aghs-card .ability-name{
+    font-family:'Cinzel', serif;
+    font-size: 13px;
+    color: var(--teal);
+    margin-bottom: 4px;
+    line-height: 1.3;
+  }
+  .aghs-card .ability-desc{
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--parchment);
+  }
+  .aghs-card.empty{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    color: var(--muted);
+    font-size: 11px;
+  }
   #abilitiesNote{
     font-size: 11px;
     color: var(--muted);
@@ -478,7 +512,7 @@
         <button id="btnScepter" type="button">Scepter</button>
         <button id="btnShard" type="button">Shard</button>
       </div>
-      <div id="aghsCards"></div>
+      <div id="aghsCards" class="aghs-grid"></div>
     </div>
 
     <div class="section-title">Items</div>
@@ -987,9 +1021,13 @@ async function loadAghsData(){
   }
 }
 
-function buildAghsCard(kind, skillName, desc, isNew){
+function buildAghsCard(column, kind, skillName, desc, isNew){
   const badge = kind.toUpperCase() + (isNew ? ' · NEW ABILITY' : ' UPGRADE');
-  return `<div class="ability-card"><div class="ability-name">${skillName}<span class="aghs-badge">${badge}</span></div><div class="ability-desc">${desc}</div></div>`;
+  return `<div class="aghs-card" style="grid-column:${column};"><div class="ability-name">${skillName}<span class="aghs-badge">${badge}</span></div><div class="ability-desc">${desc}</div></div>`;
+}
+
+function buildAghsEmpty(column, message){
+  return `<div class="aghs-card empty" style="grid-column:${column};">${message}</div>`;
 }
 
 function renderAghs(hero){
@@ -997,21 +1035,25 @@ function renderAghs(hero){
   if (!scepterActive && !shardActive) return;
 
   const entry = aghsData[hero.name];
-  if (!entry) {
-    aghsCardsEl.innerHTML = '<div id="abilitiesNote">Aghanim\'s data unavailable right now.</div>';
-    return;
-  }
 
   const parts = [];
   if (scepterActive) {
-    parts.push(entry.has_scepter
-      ? buildAghsCard('Scepter', entry.scepter_skill_name, entry.scepter_desc, entry.scepter_new_skill)
-      : '<div id="abilitiesNote">No Scepter upgrade for this hero.</div>');
+    if (!entry) {
+      parts.push(buildAghsEmpty(1, 'Data unavailable'));
+    } else if (entry.has_scepter) {
+      parts.push(buildAghsCard(1, 'Scepter', entry.scepter_skill_name, entry.scepter_desc, entry.scepter_new_skill));
+    } else {
+      parts.push(buildAghsEmpty(1, 'No Scepter upgrade'));
+    }
   }
   if (shardActive) {
-    parts.push(entry.has_shard
-      ? buildAghsCard('Shard', entry.shard_skill_name, entry.shard_desc, entry.shard_new_skill)
-      : '<div id="abilitiesNote">No Shard upgrade for this hero.</div>');
+    if (!entry) {
+      parts.push(buildAghsEmpty(2, 'Data unavailable'));
+    } else if (entry.has_shard) {
+      parts.push(buildAghsCard(2, 'Shard', entry.shard_skill_name, entry.shard_desc, entry.shard_new_skill));
+    } else {
+      parts.push(buildAghsEmpty(2, 'No Shard upgrade'));
+    }
   }
   aghsCardsEl.innerHTML = parts.join('');
 }
